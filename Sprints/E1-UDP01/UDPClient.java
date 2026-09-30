@@ -4,7 +4,7 @@ import java.io.*;
 public class UDPClient {
 
     private static final String PALAVRA_SAIDA = "sair";
-    private static final String PALAVRA_MODO  = "modo";
+    private static final String PALAVRA_MODO = "modo";
 
     public static void main(String args[]) {
         DatagramSocket aSocket = null;
@@ -24,6 +24,12 @@ public class UDPClient {
             int proximoN = 1;
             boolean automatico = escolherModo(teclado);
 
+            // Ao iniciar em modo automático, pergunta ao servidor
+            // qual é o próximo número esperado.
+            if (automatico) {
+                proximoN = obterProximoN(aSocket, aHost, serverPort);
+            }
+
             System.out.println("Escreva \"" + PALAVRA_SAIDA + "\" para terminar"
                     + " ou \"" + PALAVRA_MODO + "\" para trocar de modo.");
 
@@ -35,10 +41,18 @@ public class UDPClient {
                     System.out.println("A terminar o cliente.");
                     break;
                 }
+
                 if (linha.equalsIgnoreCase(PALAVRA_MODO)) {
                     automatico = escolherModo(teclado);
+
+                    // Se mudou para automático, volta a consultar o servidor.
+                    if (automatico) {
+                        proximoN = obterProximoN(
+                                aSocket, aHost, serverPort);
+                    }
                     continue;
                 }
+
                 if (linha.isEmpty()) {
                     continue;
                 }
@@ -49,7 +63,8 @@ public class UDPClient {
                 } else {
                     N = lerNumero(teclado);
                     if (N == Integer.MIN_VALUE) {
-                        System.out.println("Numero invalido, mensagem nao enviada.");
+                        System.out.println(
+                                "Numero invalido, mensagem nao enviada.");
                         continue;
                     }
                 }
@@ -67,24 +82,27 @@ public class UDPClient {
 
                 try {
                     aSocket.receive(reply);
-                    String resposta = new String(reply.getData(),
-                            0,
-                            reply.getLength());
+                    String resposta = new String(
+                            reply.getData(), 0, reply.getLength());
 
                     if (resposta.startsWith("waitingfor,")) {
-                        String esperada = resposta.substring("waitingfor,".length());
+                        String esperada =
+                                resposta.substring("waitingfor,".length());
+
                         System.out.println("  !! FORA DE ORDEM"
                                 + " - o servidor esta a espera da mensagem "
                                 + esperada);
                     } else {
                         System.out.println("  echo: " + resposta);
+
                         if (automatico) {
                             proximoN++;
                         }
                     }
 
                 } catch (SocketTimeoutException e) {
-                    System.out.println("  sem resposta do servidor (timeout).");
+                    System.out.println(
+                            "  sem resposta do servidor (timeout).");
                 }
             }
 
@@ -93,36 +111,87 @@ public class UDPClient {
         } catch (IOException e) {
             System.out.println("IO: " + e.getMessage());
         } finally {
-            if (aSocket != null) aSocket.close();
+            if (aSocket != null) {
+                aSocket.close();
+            }
         }
     }
 
     private static boolean escolherModo(BufferedReader teclado)
             throws IOException {
         while (true) {
-            System.out.print("Modo de numeracao [A]utomatico / [M]anual: ");
+            System.out.print(
+                    "Modo de numeracao [A]utomatico / [M]anual: ");
             String op = teclado.readLine();
-            if (op == null) return true;
+
+            if (op == null) {
+                return true;
+            }
+
             op = op.trim();
+
             if (op.equalsIgnoreCase("A")) {
                 System.out.println("Modo automatico.");
                 return true;
             }
+
             if (op.equalsIgnoreCase("M")) {
                 System.out.println("Modo manual.");
                 return false;
             }
+
             System.out.println("Opcao invalida.");
         }
     }
 
-    private static int lerNumero(BufferedReader teclado) throws IOException {
+    private static int lerNumero(BufferedReader teclado)
+            throws IOException {
         System.out.print("  numero de sequencia N: ");
         String s = teclado.readLine();
+
         try {
             return Integer.parseInt(s.trim());
         } catch (Exception e) {
             return Integer.MIN_VALUE;
+        }
+    }
+
+    private static int obterProximoN(
+            DatagramSocket socket, InetAddress host, int porto)
+            throws IOException {
+
+        byte[] dados = "sync".getBytes();
+        DatagramPacket pedido =
+                new DatagramPacket(dados, dados.length, host, porto);
+        socket.send(pedido);
+
+        byte[] buffer = new byte[1000];
+        DatagramPacket reply =
+                new DatagramPacket(buffer, buffer.length);
+        socket.receive(reply);
+
+        String resposta = new String(
+                reply.getData(), 0, reply.getLength());
+
+        if (!resposta.startsWith("waitingfor,")) {
+            throw new IOException(
+                    "Resposta de sincronizacao inesperada: " + resposta);
+        }
+
+        try {
+            int proximo = Integer.parseInt(
+                    resposta.substring("waitingfor,".length()).trim());
+
+            if (proximo < 1) {
+                throw new NumberFormatException();
+            }
+
+            System.out.println("Proximo numero a enviar: " + proximo);
+            return proximo;
+
+        } catch (NumberFormatException e) {
+            throw new IOException(
+                    "Numero de sincronizacao invalido: " + resposta, e);
         }
     }
 }

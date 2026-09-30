@@ -1,7 +1,41 @@
 import java.net.*;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class UDPServer {
+    private static final List<String> mensagensEntregues = new ArrayList<>();
+    private static final Map<Integer, String> mensagensTemporarias = new HashMap<>();
+
+    /**
+     * @return número da última mensagem entregue em ordem
+     */
+    public static int processDeliveredMessages(
+            int nLastMessageInOrder,
+            int nCurrentMessage,
+            String currentMessage) {
+
+        if (nCurrentMessage <= nLastMessageInOrder) {
+            return nLastMessageInOrder;
+        }
+
+        if (nCurrentMessage == nLastMessageInOrder + 1) {
+            mensagensEntregues.add(currentMessage);
+            int ultimo = nCurrentMessage;
+
+            while (mensagensTemporarias.containsKey(ultimo + 1)) {
+                ultimo++;
+                mensagensEntregues.add(mensagensTemporarias.remove(ultimo));
+            }
+
+            return ultimo;
+        }
+
+        mensagensTemporarias.put(nCurrentMessage, currentMessage);
+        return nLastMessageInOrder;
+    }
 
     public static void main(String args[]) {
         DatagramSocket aSocket = null;
@@ -34,10 +68,16 @@ public class UDPServer {
                     }
                 }
 
+                int LAnterior = L;
+                int totalAnterior = mensagensEntregues.size();
+
+                if (N > 0 && virgula < texto.length() - 1) {
+                    L = processDeliveredMessages(L, N, texto);
+                }
+
                 String resposta;
-                if (N == L + 1) {
+                if (L > LAnterior) {
                     resposta = texto;
-                    L = N;
                 } else {
                     resposta = "waitingfor," + (L + 1);
                 }
@@ -48,8 +88,13 @@ public class UDPServer {
                 aSocket.send(reply);
 
                 System.out.println("recebido: \"" + texto + "\""
-                        + "  ->  enviado: \"" + resposta + "\""
-                        + "   (L = " + L + ")");
+                        + " -> enviado: \"" + resposta + "\"");
+                System.out.println("L = " + L);
+                System.out.println("temporarias = " + mensagensTemporarias);
+                System.out.println("entregues neste passo = "
+                        + mensagensEntregues.subList(
+                        totalAnterior, mensagensEntregues.size()));
+                System.out.println("lista de rececao = " + mensagensEntregues);
             }
 
         } catch (SocketException e) {
